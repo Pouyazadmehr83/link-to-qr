@@ -59,7 +59,7 @@ def create_qr_code(
         size=qr_code.size,
         logo_path=qr_code.logo_path,
     )
-    image_path = str(GENERATED_DIR / filename)
+    image_path = f"/generated/{filename}"
 
     # Save to database
     db_qr = crud.create_qr_code(db, qr_code, image_path=image_path)
@@ -116,7 +116,7 @@ def create_batch_qr_codes(
             color=batch.color,
             size=batch.size,
         )
-        image_path = str(GENERATED_DIR / filename)
+        image_path = f"/generated/{filename}"
 
         # Create schema for each URL
         qr_code_schema = schemas.QRCodeCreate(
