@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from sqlalchemy.orm import Session
 
 from . import crud, schemas
@@ -16,14 +17,19 @@ from .qr_generator import GENERATED_DIR, generate_qr_code
 
 app = FastAPI(title="QR Code Generator API", version="1.0.0")
 
-# CORS configuration
+# CORS - restrict to frontend origin in production
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost,http://localhost:80").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+# Upload limits
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
+ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 
 # Create database tables on startup
 Base.metadata.create_all(bind=engine)
@@ -62,11 +68,29 @@ def create_qr_code(
 
 @app.post("/api/upload-logo")
 async def upload_logo(file: UploadFile):
+    # Validate content type
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
+    # Validate file extension
+    file_ext = Path(file.filename).suffix.lower() if file.filename else ".png"
+    if file_ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File extension {file_ext} not allowed")
+
+    # Read file contents and check size
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+
+    # Validate it's actually an image using Pillow
+    try:
+        import io
+        img = Image.open(io.BytesIO(contents))
+        img.verify()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image file")
+
     # Generate unique filename
-    file_ext = Path(file.filename).suffix if file.filename else ".png"
     filename = f"{uuid.uuid4().hex}{file_ext}"
     upload_dir = GENERATED_DIR / "logos"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -74,7 +98,7 @@ async def upload_logo(file: UploadFile):
 
     # Save file
     with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(contents)
 
     return {"path": str(file_path), "filename": filename}
 
@@ -156,7 +180,10 @@ def delete_qr_code(
 
 @app.get("/api/qr/{filename}")
 def get_qr_image(filename: str):
-    file_path = GENERATED_DIR / filename
+    # Prevent path traversal
+    file_path = (GENERATED_DIR / filename).resolve()
+    if not str(file_path).startswith(str(GENERATED_DIR.resolve())):
+        raise HTTPException(status_code=403, detail="Forbidden")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="QR code image not found")
     return FileResponse(path=file_path, media_type="image/png")

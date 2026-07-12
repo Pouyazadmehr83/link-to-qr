@@ -62,19 +62,25 @@ def generate_qr_code(
 
     # Overlay logo if provided
     if logo_path and os.path.exists(logo_path):
-        logo = Image.open(logo_path).convert("RGBA")
-        # Calculate logo size (roughly 1/5 of QR code size)
-        logo_max = size // 5
-        logo.thumbnail((logo_max, logo_max), Image.LANCZOS)
+        # Validate logo path is within expected directory
+        resolved_logo = Path(logo_path).resolve()
+        logos_dir = (GENERATED_DIR / "logos").resolve()
+        if not str(resolved_logo).startswith(str(logos_dir)):
+            pass  # Skip invalid logo path
+        else:
+            logo = Image.open(logo_path).convert("RGBA")
+            # Calculate logo size (roughly 1/5 of QR code size)
+            logo_max = size // 5
+            logo.thumbnail((logo_max, logo_max), Image.LANCZOS)
 
-        # Create white background for logo
-        logo_bg_size = (logo.width + 10, logo.height + 10)
-        logo_bg = Image.new("RGBA", logo_bg_size, (255, 255, 255, 255))
-        logo_bg.paste(logo, (5, 5), logo)
+            # Create white background for logo
+            logo_bg_size = (logo.width + 10, logo.height + 10)
+            logo_bg = Image.new("RGBA", logo_bg_size, (255, 255, 255, 255))
+            logo_bg.paste(logo, (5, 5), logo)
 
-        # Center the logo on the QR code
-        pos = ((size - logo_bg.width) // 2, (size - logo_bg.height) // 2)
-        qr_image.paste(logo_bg, pos, logo_bg)
+            # Center the logo on the QR code
+            pos = ((size - logo_bg.width) // 2, (size - logo_bg.height) // 2)
+            qr_image.paste(logo_bg, pos, logo_bg)
 
     # Save with UUID filename
     filename = f"{uuid.uuid4().hex}.png"
